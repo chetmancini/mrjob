@@ -1077,6 +1077,17 @@ class EMRJobRunner(HadoopInTheCloudJobRunner, LogInterpretationMixin):
             except Exception as e:
                 log.exception(e)
 
+    def _cleanup_hadoop_tmp(self):
+        emr_client = self.make_emr_client()
+        step = self._build_hadoop_tmp_cleanup_step()
+        try:
+            emr_client.add_job_flow_steps(
+                JobFlowId=self._cluster_id,
+                Steps=[step]
+            )
+        except Exception as e:
+            log.exception(e)
+
     def _cleanup_logs(self):
         super(EMRJobRunner, self)._cleanup_logs()
 
@@ -1419,6 +1430,9 @@ class EMRJobRunner(HadoopInTheCloudJobRunner, LogInterpretationMixin):
         for n in range(self._num_steps()):
             steps.append(self._build_step(n))
 
+        if self._cleanup_mode() in ['ALL', 'TMP', 'HADOOP_TMP']:
+            steps.append(self._build_hadoop_tmp_cleanup_step())
+
         return steps
 
     def _build_step(self, step_num):
@@ -1524,6 +1538,21 @@ class EMRJobRunner(HadoopInTheCloudJobRunner, LogInterpretationMixin):
             HadoopJarStep=dict(
                 Jar=jar,
                 Args=step_args,
+            )
+        )
+
+    def _build_hadoop_tmp_cleanup_step(self):
+        name = '%s: HDFS cleanup' % self._job_key
+        jar = 'command-runner.jar'
+        path = self._default_step_output_dir()
+        step_args = ['hadoop', 'fs', '-rm', '-R', '-f', path]
+
+        return dict(
+            Name=name,
+            ActionOnFailure=self._action_on_failure(),
+            HadoopJarStep=dict(
+                Jar=jar,
+                Args=step_args
             )
         )
 
